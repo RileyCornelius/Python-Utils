@@ -8,7 +8,7 @@ Eg: uv run requirements_to_pyproject.py
 ---
 Output:
 The extracted dependency list is printed out to the terminal - copy and paste it to the target pyproject.toml's [project] section.
-Validation will run and report if ✅ Validation successful or ❌ Validation failed (with failure mode)
+Validation will run and report if Validation successful or Validation failed (with failure mode)
 """
 
 import re
@@ -107,7 +107,7 @@ def test_conversion(req_path: Path, generated_dependencies: str) -> bool:
 
     # Compare counts
     if original_count == output_count:
-        print(f"✅ Validation successful: {original_count} requirements converted to {output_count} dependencies")
+        print(f"Validation successful: {original_count} requirements converted to {output_count} dependencies")
         return True
     else:
         print(f"❌ Validation failed: {original_count} requirements != {output_count} dependencies")
@@ -137,15 +137,33 @@ def copy_dependencies_to_pyproject(pyproject_path: Path, dependencies: str):
 
 def run_uv_command(cmd: list[str]) -> bool:
     if shutil.which("uv") is not None:
+        print(" ".join(cmd))
         try:
-            results = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            print(results.stderr)
+            with subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                universal_newlines=True,
+            ) as process:
+                while True:
+                    if process.stderr is None:
+                        break
+                    line = process.stderr.readline()
+                    if not line and process.poll() is not None:
+                        break
+                    if line:
+                        print(line.rstrip())
+                if process.returncode != 0:
+                    print(f"Error: uv init exited with code {process.returncode}")
+                    return False
             return True
-        except subprocess.CalledProcessError as e:
+        except Exception as e:
             print(f"Error running uv init: {e}")
             return False
     else:
-        print("Warning: 'uv' command not found. Skipping 'uv init'.")
+        print("Warning: 'uv' command not found. You must install uv to use this script.")
         return False
 
 
@@ -166,7 +184,6 @@ def main() -> None:
 
     # Generate dependencies section
     dependencies_section = generate_dependencies_section(req_path)
-    print(dependencies_section)
 
     # Run test
     success = test_conversion(req_path, dependencies_section)
@@ -183,9 +200,9 @@ def main() -> None:
     pyproject_path = script_dir / "pyproject.toml"
     success = copy_dependencies_to_pyproject(pyproject_path, dependencies_section)
     if success:
-        print(f"Copied dependencies to {pyproject_path.stem}.")
+        print(f"Copied dependencies to {pyproject_path.name}")
     else:
-        print(f"Error: Could not write to {pyproject_path}.")
+        print(f"Error: Could not write to {pyproject_path}")
         sys.exit(1)
 
     # Run uv sync
@@ -202,7 +219,7 @@ def main() -> None:
     ]
     for file in files_to_remove:
         file.unlink()
-        print(f"Removed {file.stem}")
+        print(f"Removed {file.name}")
 
 
 if __name__ == "__main__":
