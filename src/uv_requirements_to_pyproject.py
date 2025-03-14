@@ -1,14 +1,20 @@
 """
-Script to convert requirements.txt to dependencies list for pyproject.toml for uv project
+Script to convert requirements.txt based projects to pyproject.toml using UV tool.
+
 Usage:
-Execute the script with:
-uv run requirements_to_pyproject.py [path/to/requirements.txt]
-If no path is provided, it will use 'requirements.txt' in the script's directory.
-Eg: uv run requirements_to_pyproject.py
----
-Output:
-The extracted dependency list is printed out to the terminal - copy and paste it to the target pyproject.toml's [project] section.
-Validation will run and report if Validation successful or Validation failed (with failure mode)
+Copy this script to the same directory as your requirements.txt file and run it.
+Example: python uv_requirements_to_pyproject.py
+
+Process:
+1. Parses requirements.txt into dependency entries compatible with pyproject.toml
+2. Validates the conversion by comparing dependency counts
+3. Creates a UV project structure with 'uv init'
+4. Updates pyproject.toml with the converted dependencies
+5. Runs 'uv sync' to install the dependencies
+6. Cleans up temporary files (requirements.txt, .python-version, main.py)
+
+Requirements:
+- UV must be installed and accessible in the PATH
 """
 
 import re
@@ -95,7 +101,7 @@ def generate_dependencies_section(req_path: Path) -> str:
     return deps_section
 
 
-def test_conversion(req_path: Path, generated_dependencies: str) -> bool:
+def validate_requirement_conversion(req_path: Path, generated_dependencies: str) -> bool:
     """Test that the conversion worked correctly by comparing item counts."""
     # Get the original requirements count
     requirements = parse_requirements(req_path)
@@ -107,7 +113,7 @@ def test_conversion(req_path: Path, generated_dependencies: str) -> bool:
 
     # Compare counts
     if original_count == output_count:
-        print(f"Validation successful: {original_count} requirements converted to {output_count} dependencies")
+        print(f"{original_count} requirements converted to {output_count} dependencies")
         return True
     else:
         print(f"❌ Validation failed: {original_count} requirements != {output_count} dependencies")
@@ -136,6 +142,7 @@ def copy_dependencies_to_pyproject(pyproject_path: Path, dependencies: str):
 
 
 def run_uv_command(cmd: list[str]) -> bool:
+    """Execute a UV command and stream its output to the console."""
     if shutil.which("uv") is not None:
         print(" ".join(cmd))
         try:
@@ -147,6 +154,7 @@ def run_uv_command(cmd: list[str]) -> bool:
                 bufsize=1,
                 universal_newlines=True,
             ) as process:
+                # Stream stderr output in real-time
                 while True:
                     if process.stderr is None:
                         break
@@ -155,12 +163,13 @@ def run_uv_command(cmd: list[str]) -> bool:
                         break
                     if line:
                         print(line.rstrip())
+                # Check if process failed
                 if process.returncode != 0:
-                    print(f"Error: uv init exited with code {process.returncode}")
+                    print(f"Error: {process.returncode}")
                     return False
             return True
         except Exception as e:
-            print(f"Error running uv init: {e}")
+            print(f"Error: {e}")
             return False
     else:
         print("Warning: 'uv' command not found. You must install uv to use this script.")
@@ -168,25 +177,27 @@ def run_uv_command(cmd: list[str]) -> bool:
 
 
 def main() -> None:
+    """
+    - Locates requirements.txt file
+    - Generates dependencies section for pyproject.toml
+    - Tests the conversion for completeness
+    - Sets up a UV project and copies dependencies to pyproject.toml
+    - Runs UV sync to install dependencies
+    - Cleans up unneeded files
+    """
     # Get the script directory for default path
     script_dir = Path(__file__).parent
     req_path = script_dir / "requirements.txt"
 
-    # Parse args for custom path
-    if len(sys.argv) > 1:
-        req_path = Path(sys.argv[1])
-        script_dir = req_path.parent
-
     if not req_path.exists():
         print(f"Error: File {req_path} does not exist.")
-        print(f"Usage: {sys.argv[0]} [path/to/requirements.txt]")
         sys.exit(1)
 
     # Generate dependencies section
     dependencies_section = generate_dependencies_section(req_path)
 
     # Run test
-    success = test_conversion(req_path, dependencies_section)
+    success = validate_requirement_conversion(req_path, dependencies_section)
     if not success:
         sys.exit(1)
 
@@ -211,7 +222,7 @@ def main() -> None:
     if not success:
         sys.exit(1)
 
-    # Remove unnecessary files
+    # Remove unneeded files
     files_to_remove = [
         script_dir / "requirements.txt",
         script_dir / ".python-version",
